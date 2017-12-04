@@ -12,7 +12,7 @@ import com.microsoft.azure.sdk.iot.device.transport.State;
 import java.io.IOException;
 import java.util.List;
 import java.util.Queue;
-import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * <p>
@@ -30,7 +30,6 @@ import java.util.concurrent.LinkedBlockingDeque;
 public final class MqttTransport implements IotHubTransport, MqttConnectionStateListener
 {
     /** The MQTT connection lock. */
-    protected final Object sendMessagesLock = new Object();
     protected final Object handleMessageLock = new Object();
 
     private State state;
@@ -59,10 +58,10 @@ public final class MqttTransport implements IotHubTransport, MqttConnectionState
     {
         // Codes_SRS_MQTTTRANSPORT_15_001: [The constructor shall initialize an empty transport queue
         // for adding messages to be sent as a batch.]
-        this.waitingList = new LinkedBlockingDeque<>();
+        this.waitingList = new LinkedBlockingQueue<>();
         // Codes_SRS_MQTTTRANSPORT_15_002: [The constructor shall initialize an empty queue
         // for completed messages whose callbacks are waiting to be invoked.]
-        this.callbackList = new LinkedBlockingDeque<>();
+        this.callbackList = new LinkedBlockingQueue<>();
         this.config = config;
         this.state = State.CLOSED;
     }
@@ -111,12 +110,13 @@ public final class MqttTransport implements IotHubTransport, MqttConnectionState
         }
         
         // Codes_SRS_MQTTTRANSPORT_99_020: [The method will remove all the messages which are in progress or waiting to be sent and add them to the callback list.]
-        while (!this.waitingList.isEmpty())
+        IotHubOutboundPacket packet = this.waitingList.poll();
+        while (packet != null)
         {
-            IotHubOutboundPacket packet = this.waitingList.remove();
-
             IotHubCallbackPacket callbackPacket = new IotHubCallbackPacket(IotHubStatusCode.MESSAGE_CANCELLED_ONCLOSE, packet.getCallback(), packet.getContext());
             this.callbackList.add(callbackPacket);
+
+            packet = this.waitingList.poll();
         }
        
         // Codes_SRS_MQTTTRANSPORT_99_021: [The method will invoke the callback list]
@@ -144,20 +144,17 @@ public final class MqttTransport implements IotHubTransport, MqttConnectionState
             IotHubEventCallback callback,
             Object callbackContext) throws IllegalStateException
     {
-        synchronized (sendMessagesLock)
+        // Codes_SRS_MQTTTRANSPORT_15_008: [If the transport is closed,
+        // the function shall throw an IllegalStateException.]
+        if (this.state == State.CLOSED)
         {
-            // Codes_SRS_MQTTTRANSPORT_15_008: [If the transport is closed,
-            // the function shall throw an IllegalStateException.]
-            if (this.state == State.CLOSED)
-            {
-                throw new IllegalStateException("Cannot add a message to an MQTT transport that is closed.");
-            }
-
-            //Codes_SRS_MQTTTRANSPORT_15_007: [The function shall add a packet containing the message, callback,
-            // and callback context to the transport queue.]
-            IotHubOutboundPacket packet = new IotHubOutboundPacket(message, callback, callbackContext);
-            this.waitingList.add(packet);
+            throw new IllegalStateException("Cannot add a message to an MQTT transport that is closed.");
         }
+
+        //Codes_SRS_MQTTTRANSPORT_15_007: [The function shall add a packet containing the message, callback,
+        // and callback context to the transport queue.]
+        IotHubOutboundPacket packet = new IotHubOutboundPacket(message, callback, callbackContext);
+        this.waitingList.add(packet);
     }
 
     /**
@@ -194,63 +191,61 @@ public final class MqttTransport implements IotHubTransport, MqttConnectionState
      */
     public void sendMessages() throws IllegalStateException
     {
-        synchronized (sendMessagesLock)
+        // Codes_SRS_MQTTTRANSPORT_15_012: [If the MQTT connection is closed,
+        // the function shall throw an IllegalStateException.]
+        if (this.state == State.CLOSED)
         {
-            // Codes_SRS_MQTTTRANSPORT_15_012: [If the MQTT connection is closed,
-            // the function shall throw an IllegalStateException.]
-            if (this.state == State.CLOSED)
-            {
-                throw new IllegalStateException("MQTT transport is closed.");
-            }
+            throw new IllegalStateException("MQTT transport is closed.");
+        }
 
-            if (this.waitingList.size() <= 0)
-            {
-                return;
-            }
+        if (this.waitingList.size() <= 0)
+        {
+            return;
+        }
 
-            // Codes_SRS_MQTTTRANSPORT_15_009: [The function shall attempt to send every message
-            // on its waiting list, one at a time.]
-            while (!this.waitingList.isEmpty())
+        // Codes_SRS_MQTTTRANSPORT_15_009: [The function shall attempt to send every message
+        // on its waiting list, one at a time.]
+        IotHubOutboundPacket packet = this.waitingList.poll();
+        while (packet != null)
+        {
+            if (this.config.getAuthenticationType() == DeviceClientConfig.AuthType.SAS_TOKEN && this.config.getSasTokenAuthentication().isRenewalNecessary())
             {
-                IotHubOutboundPacket packet = this.waitingList.remove();
+                //Codes_SRS_MQTTTRANSPORT_34_023: [If the config is using sas token auth and its token has expired, the message shall not be sent, but shall be added to the callback list with IotHubStatusCode UNAUTHORIZED.]
+                IotHubCallbackPacket callbackPacket = new IotHubCallbackPacket(IotHubStatusCode.UNAUTHORIZED, packet.getCallback(), packet.getContext());
+                this.callbackList.add(callbackPacket);
 
-                if (this.config.getAuthenticationType() == DeviceClientConfig.AuthType.SAS_TOKEN && this.config.getSasTokenAuthentication().isRenewalNecessary())
+                //Codes_SRS_MQTTTRANSPORT_34_024: [If the config is using sas token auth, its token has expired, and the connection status callback is not null, the connection status callback will be fired with SAS_TOKEN_EXPIRED.]
+                if (this.stateCallback != null)
                 {
-                    //Codes_SRS_MQTTTRANSPORT_34_023: [If the config is using sas token auth and its token has expired, the message shall not be sent, but shall be added to the callback list with IotHubStatusCode UNAUTHORIZED.]
-                    IotHubCallbackPacket callbackPacket = new IotHubCallbackPacket(IotHubStatusCode.UNAUTHORIZED, packet.getCallback(), packet.getContext());
+                    this.stateCallback.execute(IotHubConnectionState.SAS_TOKEN_EXPIRED, this.stateCallbackContext);
+                }
+            }
+            else if (packet.getMessage().isExpired())
+            {
+                //Codes_SRS_MQTTTRANSPORT_34_027: [If the packet to be sent contains a message that has expired, the message shall not be sent, but shall be added to the callback list with IotHubStatusCode MESSAGE_EXPIRED.]
+                IotHubCallbackPacket callbackPacket = new IotHubCallbackPacket(IotHubStatusCode.MESSAGE_EXPIRED, packet.getCallback(), packet.getContext());
+                this.callbackList.add(callbackPacket);
+            }
+            else
+            {
+                try
+                {
+                    IotHubStatusCode status = this.mqttIotHubConnection.sendEvent(packet.getMessage());
+
+                    // Codes_SRS_MQTTTRANSPORT_15_010: [For each message being sent, the function shall add
+                    // the IoT Hub status code along with the callback and context to the callback list.]
+                    IotHubCallbackPacket callbackPacket = new IotHubCallbackPacket(status, packet.getCallback(), packet.getContext());
                     this.callbackList.add(callbackPacket);
-
-                    //Codes_SRS_MQTTTRANSPORT_34_024: [If the config is using sas token auth, its token has expired, and the connection status callback is not null, the connection status callback will be fired with SAS_TOKEN_EXPIRED.]
-                    if (this.stateCallback != null)
-                    {
-                        this.stateCallback.execute(IotHubConnectionState.SAS_TOKEN_EXPIRED, this.stateCallbackContext);
-                    }
                 }
-                else if (packet.getMessage().isExpired())
+                // Codes_SRS_MQTTTRANSPORT_15_011: [If the IoT Hub could not be reached, the message
+                // shall be buffered to be sent again next time.]
+                catch (IllegalStateException e)
                 {
-                    //Codes_SRS_MQTTTRANSPORT_34_027: [If the packet to be sent contains a message that has expired, the message shall not be sent, but shall be added to the callback list with IotHubStatusCode MESSAGE_EXPIRED.]
-                    IotHubCallbackPacket callbackPacket = new IotHubCallbackPacket(IotHubStatusCode.MESSAGE_EXPIRED, packet.getCallback(), packet.getContext());
-                    this.callbackList.add(callbackPacket);
-                }
-                else
-                {
-                    try
-                    {
-                        IotHubStatusCode status = this.mqttIotHubConnection.sendEvent(packet.getMessage());
-
-                        // Codes_SRS_MQTTTRANSPORT_15_010: [For each message being sent, the function shall add
-                        // the IoT Hub status code along with the callback and context to the callback list.]
-                        IotHubCallbackPacket callbackPacket = new IotHubCallbackPacket(status, packet.getCallback(), packet.getContext());
-                        this.callbackList.add(callbackPacket);
-                    }
-                    // Codes_SRS_MQTTTRANSPORT_15_011: [If the IoT Hub could not be reached, the message
-                    // shall be buffered to be sent again next time.]
-                    catch (IllegalStateException e)
-                    {
-                        this.waitingList.add(packet);
-                    }
+                    this.waitingList.add(packet);
                 }
             }
+
+            packet = this.waitingList.poll();
         }
     }
 
@@ -261,28 +256,26 @@ public final class MqttTransport implements IotHubTransport, MqttConnectionState
      */
     public void invokeCallbacks() throws IllegalStateException
     {
-        synchronized (sendMessagesLock)
+        // Codes_SRS_MQTTTRANSPORT_15_014: [If the transport is closed,
+        // the function shall throw an IllegalStateException.]
+        if (this.state == State.CLOSED)
         {
-            // Codes_SRS_MQTTTRANSPORT_15_014: [If the transport is closed,
-            // the function shall throw an IllegalStateException.]
-            if (this.state == State.CLOSED)
-            {
-                throw new IllegalStateException("MQTT transport is closed.");
-            }
+            throw new IllegalStateException("MQTT transport is closed.");
+        }
 
-            // Codes_SRS_MQTTTRANSPORT_15_013: [The function shall invoke all callbacks on the callback queue.]
-            while (!this.callbackList.isEmpty())
-            {
-                // Codes_SRS_MQTTTRANSPORT_15_015: [If an exception is thrown during the callback,
-                // the function shall drop the callback from the queue.]
-                IotHubCallbackPacket packet = this.callbackList.remove();
+        // Codes_SRS_MQTTTRANSPORT_15_013: [The function shall invoke all callbacks on the callback queue.]
+        IotHubCallbackPacket packet = this.callbackList.poll();
+        while (packet != null)
+        {
+            // Codes_SRS_MQTTTRANSPORT_15_015: [If an exception is thrown during the callback,
+            // the function shall drop the callback from the queue.]
+            IotHubStatusCode status = packet.getStatus();
+            IotHubEventCallback callback = packet.getCallback();
+            Object context = packet.getContext();
 
-                IotHubStatusCode status = packet.getStatus();
-                IotHubEventCallback callback = packet.getCallback();
-                Object context = packet.getContext();
+            callback.execute(status, context);
 
-                callback.execute(status, context);
-            }
+            packet = this.callbackList.poll();
         }
     }
 
@@ -362,17 +355,9 @@ public final class MqttTransport implements IotHubTransport, MqttConnectionState
      */
     public boolean isEmpty()
     {
-        synchronized (sendMessagesLock)
-        {
-            // Codes_SRS_MQTTTRANSPORT_15_019: [The function shall return true if the waiting list
-            // and callback list are all empty, and false otherwise.]
-            if (this.waitingList.isEmpty() && this.callbackList.isEmpty())
-            {
-                return true;
-            }
-        }
-
-        return false;
+        // Codes_SRS_MQTTTRANSPORT_15_019: [The function shall return true if the waiting list
+        // and callback list are all empty, and false otherwise.]
+        return this.waitingList.isEmpty() && this.callbackList.isEmpty();
     }
 
     /**

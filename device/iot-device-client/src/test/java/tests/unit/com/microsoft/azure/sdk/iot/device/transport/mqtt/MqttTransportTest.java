@@ -71,10 +71,6 @@ public class MqttTransportTest
             }
         };
         
-        Field sendMessagesLock = transport.getClass().getDeclaredField("sendMessagesLock");
-        sendMessagesLock.setAccessible(true);
-        assertNotNull(sendMessagesLock.get(transport));
-
         Field handleMessageLock = transport.getClass().getDeclaredField("handleMessageLock");
         handleMessageLock.setAccessible(true);
         assertNotNull(handleMessageLock.get(transport));
