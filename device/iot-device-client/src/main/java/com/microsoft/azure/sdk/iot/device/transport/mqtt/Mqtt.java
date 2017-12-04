@@ -16,6 +16,8 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidParameterException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 abstract public class Mqtt implements MqttCallback
@@ -27,6 +29,8 @@ abstract public class Mqtt implements MqttCallback
 
     // SAS token expiration check on retry
     private boolean userSpecifiedSASTokenExpiredOnRetry = false;
+
+    private Collection<MqttConnectionStateListener> listeners = new ArrayList<>();
 
     /* Each property is separated by & and all system properties start with an encoded $ (except for iothub-ack) */
     final static char MESSAGE_PROPERTY_SEPARATOR = '&';
@@ -345,6 +349,12 @@ abstract public class Mqtt implements MqttCallback
     @Override
     public void connectionLost(Throwable throwable)
     {
+        //Codes_SRS_Mqtt_34_045: [This function shall notify all its saved listeners that connection was lost.]
+        for (MqttConnectionStateListener listener : this.listeners)
+        {
+            listener.connectionLost();
+        }
+
         synchronized (this.mqttLock)
         {
             if (this.mqttConnection != null && this.mqttConnection.getMqttAsyncClient() != null)
@@ -569,5 +579,15 @@ abstract public class Mqtt implements MqttCallback
         }
 
         this.deviceClientConfig = deviceConfig; // set device client config object
+    }
+
+    /**
+     * Subscribe a listener to the list of listeners.
+     * @param listeners the collection of listeners to be subscribed.
+     */
+    void setListeners(Collection<MqttConnectionStateListener> listeners)
+    {
+        //Codes_SRS_Mqtt_34_042: [This function shall save the provided listeners.]
+        this.listeners = listeners;
     }
 }

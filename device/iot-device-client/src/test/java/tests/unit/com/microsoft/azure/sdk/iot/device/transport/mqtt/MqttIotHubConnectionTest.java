@@ -3,10 +3,7 @@
 
 package tests.unit.com.microsoft.azure.sdk.iot.device.transport.mqtt;
 
-import com.microsoft.azure.sdk.iot.device.DeviceClientConfig;
-import com.microsoft.azure.sdk.iot.device.IotHubStatusCode;
-import com.microsoft.azure.sdk.iot.device.Message;
-import com.microsoft.azure.sdk.iot.device.MessageType;
+import com.microsoft.azure.sdk.iot.device.*;
 import com.microsoft.azure.sdk.iot.device.net.IotHubUri;
 import com.microsoft.azure.sdk.iot.device.transport.IotHubTransportMessage;
 import com.microsoft.azure.sdk.iot.device.transport.State;
@@ -17,12 +14,13 @@ import org.junit.Test;
 
 import javax.net.ssl.SSLContext;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.util.Collection;
 
 import static junit.framework.TestCase.assertNotNull;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 /* Unit tests for MqttIotHubConnection
  * Code coverage: 100% methods, 95% lines
@@ -62,6 +60,12 @@ public class MqttIotHubConnectionTest
 
     @Mocked
     private MqttConnection mockedMqttConnection;
+
+    @Mocked
+    private IotHubConnectionStateCallback mockConnectionStateCallback;
+
+    @Mocked
+    private MqttConnectionStateListener mockedMqttConnectionStateListener;
 
     // Tests_SRS_MQTTIOTHUBCONNECTION_15_001: [The constructor shall save the configuration.]
     @Test
@@ -1037,6 +1041,82 @@ public class MqttIotHubConnectionTest
     }
 
 
+    //Tests_SRS_MQTTIOTHUBCONNECTION_34_027: [If this function is called while using websockets and x509 authentication, an UnsupportedOperation shall be thrown.]
+    @Test (expected = IOException.class)
+    public void websocketWithX509ThrowsAtOpen() throws IOException
+    {
+        baseExpectations();
+
+        new Expectations()
+        {
+            {
+                mockConfig.getAuthenticationType();
+                result = DeviceClientConfig.AuthType.X509_CERTIFICATE;
+                mockConfig.isUseWebsocket();
+                result = true;
+            }
+        };
+
+        MqttIotHubConnection connection = new MqttIotHubConnection(mockConfig);
+        connection.open();
+    }
+
+    //Tests_SRS_MQTTIOTHUBCONNECTION_34_030: [This function shall sync this object's saved listener collection with all of its messaging clients.]
+    @Test
+    public void openSyncsListenersWithMessagingClients() throws IOException
+    {
+        //arrange
+        baseExpectations();
+        MqttIotHubConnection connection = new MqttIotHubConnection(mockConfig);
+
+        Deencapsulation.invoke(connection, "addListener", new Class[] {MqttConnectionStateListener.class}, mockedMqttConnectionStateListener);
+        final Collection<MqttConnectionStateListener> actualListeners = Deencapsulation.getField(connection, "listeners");
+
+        //act
+        connection.open();
+
+        //assert
+        new Verifications()
+        {
+            {
+                Deencapsulation.invoke(mockDeviceMessaging, "setListeners", new Class[] {Collection.class}, actualListeners);
+                Deencapsulation.invoke(mockDeviceMethod, "setListeners", new Class[] {Collection.class}, actualListeners);
+                Deencapsulation.invoke(mockDeviceTwin, "setListeners", new Class[] {Collection.class}, actualListeners);
+            }
+        };
+    }
+
+
+    //Tests_SRS_MQTTIOTHUBCONNECTION_34_028: [If the provided listener is not null, this function shall add it to this object's saved listener collection.]
+    //Tests_SRS_MQTTIOTHUBCONNECTION_34_029: [This function shall sync this object's saved listener collection with each of its messaging clients that are not null.]
+    @Test
+    public void addListenerSuccess() throws IOException
+    {
+        //arrange
+        baseExpectations();
+        MqttIotHubConnection connection = new MqttIotHubConnection(mockConfig);
+
+        Deencapsulation.setField(connection, "deviceMessaging", mockDeviceMessaging);
+        Deencapsulation.setField(connection, "deviceTwin", mockDeviceTwin);
+        Deencapsulation.setField(connection, "deviceMethod", mockDeviceMethod);
+
+        //act
+        Deencapsulation.invoke(connection, "addListener", new Class[] {MqttConnectionStateListener.class}, mockedMqttConnectionStateListener);
+
+        //assert
+        final Collection<MqttConnectionStateListener> actualListeners = Deencapsulation.getField(connection, "listeners");
+        assertEquals(1, actualListeners.size());
+        assertTrue(actualListeners.remove(mockedMqttConnectionStateListener));
+        new Verifications()
+        {
+            {
+                Deencapsulation.invoke(mockDeviceMessaging, "setListeners", new Class[] {Collection.class}, actualListeners);
+                Deencapsulation.invoke(mockDeviceMethod, "setListeners", new Class[] {Collection.class}, actualListeners);
+                Deencapsulation.invoke(mockDeviceTwin, "setListeners", new Class[] {Collection.class}, actualListeners);
+            }
+        };
+    }
+
     private void baseExpectations()
     {
         new NonStrictExpectations() {
@@ -1071,25 +1151,5 @@ public class MqttIotHubConnectionTest
                 result = null;
             }
         };
-    }
-
-    //Tests_SRS_MQTTIOTHUBCONNECTION_34_027: [If this function is called while using websockets and x509 authentication, an UnsupportedOperation shall be thrown.]
-    @Test (expected = IOException.class)
-    public void websocketWithX509ThrowsAtOpen() throws IOException
-    {
-        baseExpectations();
-
-        new Expectations()
-        {
-            {
-                mockConfig.getAuthenticationType();
-                result = DeviceClientConfig.AuthType.X509_CERTIFICATE;
-                mockConfig.isUseWebsocket();
-                result = true;
-            }
-        };
-
-        MqttIotHubConnection connection = new MqttIotHubConnection(mockConfig);
-        connection.open();
     }
 }

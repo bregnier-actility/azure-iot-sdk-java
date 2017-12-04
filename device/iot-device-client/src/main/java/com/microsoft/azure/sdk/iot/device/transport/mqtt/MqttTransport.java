@@ -27,7 +27,7 @@ import java.util.concurrent.LinkedBlockingDeque;
  * </p>
  */
 
-public final class MqttTransport implements IotHubTransport
+public final class MqttTransport implements IotHubTransport, MqttConnectionStateListener
 {
     /** The MQTT connection lock. */
     protected final Object sendMessagesLock = new Object();
@@ -84,8 +84,10 @@ public final class MqttTransport implements IotHubTransport
         // Codes_SRS_MQTTTRANSPORT_15_003: [The function shall establish an MQTT connection
         // with the IoT Hub given in the configuration.]
         this.mqttIotHubConnection = new MqttIotHubConnection(this.config);
-        this.mqttIotHubConnection.open();
 
+        //Codes_SRS_MQTTTRANSPORT_34_029: [Before opening the mqtt iot hub connection, this function shall register this object as a listener to that mqtt iot hub connection.]
+        this.mqttIotHubConnection.addListener(this);
+        this.mqttIotHubConnection.open();
         this.state = State.OPEN;
     }
 
@@ -375,7 +377,7 @@ public final class MqttTransport implements IotHubTransport
 
     /**
      * Registers a callback to be executed whenever the mqtt connection is lost or established.
-     * 
+     *
      * @param callback the callback to be called.
      * @param callbackContext a context to be passed to the callback. Can be
      * {@code null} if no callback is provided.
@@ -392,5 +394,25 @@ public final class MqttTransport implements IotHubTransport
         //Codes_SRS_MQTTTRANSPORT_34_026: [This function shall register the connection state callback.]
         this.stateCallback = callback;
         this.stateCallbackContext = callbackContext;
+    }
+
+    @Override
+    public void connectionLost()
+    {
+        if (this.stateCallback != null)
+        {
+            //Codes_SRS_MQTTTRANSPORT_34_028: [If this object's connection state callback is not null, this function shall fire that callback with the saved context and status CONNECTION_DROP.]
+            this.stateCallback.execute(IotHubConnectionState.CONNECTION_DROP, this.stateCallbackContext);
+        }
+    }
+
+    @Override
+    public void connectionEstablished()
+    {
+        if (this.stateCallback != null)
+        {
+            //Codes_SRS_MQTTTRANSPORT_34_030: [If this object's connection state callback is not null, this function shall fire that callback with the saved context and status CONNECTION_SUCCESS.]
+            this.stateCallback.execute(IotHubConnectionState.CONNECTION_SUCCESS, this.stateCallbackContext);
+        }
     }
 }

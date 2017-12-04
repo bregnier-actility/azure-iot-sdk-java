@@ -10,7 +10,7 @@ The transport can also poll an IoT Hub for messages and invoke a user-defined me
 ## Exposed API
 
 ```java
-public final class MqttTransport implements IotHubTransport
+public final class MqttTransport implements IotHubTransport, MqttConnectionStateListener
 {
     public MqttTransport(DeviceClientConfig config);
 
@@ -28,6 +28,18 @@ public final class MqttTransport implements IotHubTransport
     public boolean isEmpty();
     
     public void registerConnectionStateCallback(IotHubConnectionStateCallback callback, Object callbackContext);
+    
+    @Override
+    public void messageSent(Integer messageHash, Boolean deliveryState);
+
+    @Override
+    public void messageReceived(AmqpsMessage message);
+
+    @Override
+    public void connectionLost();
+
+    @Override
+    public void connectionEstablished();
 }
 ```
 
@@ -52,6 +64,8 @@ public void open() throws IOException;
 **SRS_MQTTTRANSPORT_15_003: [**The function shall establish an MQTT connection with IoT Hub given in the configuration.**]**
 
 **SRS_MQTTTRANSPORT_15_004: [**If the MQTT connection is already open, the function shall do nothing.**]**
+
+**SRS_MQTTTRANSPORT_34_029: [**Before opening the mqtt iot hub connection, this function shall register this object as a listener to that mqtt iot hub connection.**]**
 
 
 ### close
@@ -146,6 +160,7 @@ public boolean isEmpty();
 
 
 ### registerConnectionStateCallback
+
 ```java
 public void registerConnectionStateCallback(IotHubConnectionStateCallback callback, Object callbackContext);
 ```
@@ -153,3 +168,35 @@ public void registerConnectionStateCallback(IotHubConnectionStateCallback callba
 **SRS_MQTTTRANSPORT_34_025: [**If the provided callback is null, an IllegalArgumentException shall be thrown.**]**
 
 **SRS_MQTTTRANSPORT_34_026: [**This function shall register the connection state callback.**]**
+
+
+### messageSent
+
+```java
+public void messageSent(Integer messageHash, Boolean deliveryState);
+```
+
+
+### messageReceived
+
+```java
+public void messageReceived(AmqpsMessage message);
+```
+
+
+### connectionLost
+
+```java
+public void connectionLost();
+```
+
+**SRS_MQTTTRANSPORT_34_028: [**If this object's connection state callback is not null, this function shall fire that callback with the saved context and status CONNECTION_DROP.**]**
+
+
+### connectionEstablished
+
+```java
+public void connectionEstablished();
+```
+
+**SRS_MQTTTRANSPORT_34_030: [**If this object's connection state callback is not null, this function shall fire that callback with the saved context and status CONNECTION_SUCCESS.**]**

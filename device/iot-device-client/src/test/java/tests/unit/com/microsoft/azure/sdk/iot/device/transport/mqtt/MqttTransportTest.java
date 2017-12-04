@@ -7,6 +7,7 @@ import com.microsoft.azure.sdk.iot.device.*;
 import com.microsoft.azure.sdk.iot.device.auth.IotHubSasTokenAuthenticationProvider;
 import com.microsoft.azure.sdk.iot.device.transport.IotHubCallbackPacket;
 import com.microsoft.azure.sdk.iot.device.transport.IotHubOutboundPacket;
+import com.microsoft.azure.sdk.iot.device.transport.mqtt.MqttConnectionStateListener;
 import com.microsoft.azure.sdk.iot.device.transport.mqtt.MqttIotHubConnection;
 import com.microsoft.azure.sdk.iot.device.transport.mqtt.MqttTransport;
 import junit.framework.AssertionFailedError;
@@ -24,7 +25,7 @@ import static org.junit.Assert.*;
 
 /**
  * Unit tests for MqttTransport.java
- * Method: 90%
+ * Method: 92%
  * Lines: 94%
  */
 public class MqttTransportTest
@@ -487,6 +488,29 @@ public class MqttTransportTest
         assertEquals(registeredConnectionStateCallbackContext, mockConnectionStateCallbackContext);
     }
 
+    //Tests_SRS_MQTTTRANSPORT_34_029: [Before opening the mqtt iot hub connection, this function shall register this object as a listener to that mqtt iot hub connection.]
+    @Test
+    public void openRegistersConnectionCallbackWithMqttIotHubConnection() throws IOException
+    {
+        //arrange
+        final MqttTransport transport = new MqttTransport(mockConfig);
+        transport.registerConnectionStateCallback(mockConnectionStateCallback, mockConnectionStateCallbackContext);
+
+        //act
+        transport.open();
+
+        //assert
+        new VerificationsInOrder()
+        {
+            {
+                Deencapsulation.invoke(mockConnection, "addListener", new Class[] {MqttConnectionStateListener.class}, transport);
+                times = 1;
+                mockConnection.open();
+                times = 1;
+            }
+        };
+    }
+
     // Tests_SRS_MQTTTRANSPORT_15_011: [If the IoT Hub could not be reached, 
     // the message shall be buffered to be sent again next time.]
     @Test
@@ -795,5 +819,87 @@ public class MqttTransportTest
         transport.open();
         transport.close();
         transport.handleMessage();
+    }
+
+    //Tests_SRS_MQTTTRANSPORT_34_028: [If this object's connection state callback is not null, this function shall fire that callback with the saved context and status CONNECTION_DROP.]
+    @Test
+    public void connectionLostFiresCallbackIfNotNull()
+    {
+        //arrange
+        MqttTransport transport = new MqttTransport(mockConfig);
+        transport.registerConnectionStateCallback(mockConnectionStateCallback, null);
+
+        //act
+        transport.connectionLost();
+
+        //assert
+        new Verifications()
+        {
+            {
+                mockConnectionStateCallback.execute(IotHubConnectionState.CONNECTION_DROP, any);
+                times = 1;
+            }
+        };
+    }
+
+    //Tests_SRS_MQTTTRANSPORT_34_028: [If this object's connection state callback is not null, this function shall fire that callback with the saved context and status CONNECTION_DROP.]
+    @Test
+    public void connectionLostDoesNotFireCallbackIfCallbackIsNotRegistered()
+    {
+        //arrange
+        MqttTransport transport = new MqttTransport(mockConfig);
+
+        //act
+        transport.connectionLost();
+
+        //assert
+        new Verifications()
+        {
+            {
+                mockConnectionStateCallback.execute((IotHubConnectionState) any, any);
+                times = 0;
+            }
+        };
+    }
+
+    //Tests_SRS_MQTTTRANSPORT_34_030: [If this object's connection state callback is not null, this function shall fire that callback with the saved context and status CONNECTION_SUCCESS.]
+    @Test
+    public void connectionSuccessFiresCallbackIfNotNull()
+    {
+        //arrange
+        MqttTransport transport = new MqttTransport(mockConfig);
+        transport.registerConnectionStateCallback(mockConnectionStateCallback, null);
+
+        //act
+        transport.connectionEstablished();
+
+        //assert
+        new Verifications()
+        {
+            {
+                mockConnectionStateCallback.execute(IotHubConnectionState.CONNECTION_SUCCESS, any);
+                times = 1;
+            }
+        };
+    }
+
+    //Tests_SRS_MQTTTRANSPORT_34_030: [If this object's connection state callback is not null, this function shall fire that callback with the saved context and status CONNECTION_SUCCESS.]
+    @Test
+    public void connectionSuccessDoesNotFireCallbackIfCallbackIsNotRegistered()
+    {
+        //arrange
+        MqttTransport transport = new MqttTransport(mockConfig);
+
+        //act
+        transport.connectionEstablished();
+
+        //assert
+        new Verifications()
+        {
+            {
+                mockConnectionStateCallback.execute((IotHubConnectionState) any, any);
+                times = 0;
+            }
+        };
     }
 }

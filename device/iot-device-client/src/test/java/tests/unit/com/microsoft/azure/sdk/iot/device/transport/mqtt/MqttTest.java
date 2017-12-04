@@ -5,10 +5,7 @@ package tests.unit.com.microsoft.azure.sdk.iot.device.transport.mqtt;
 import com.microsoft.azure.sdk.iot.device.DeviceClientConfig;
 import com.microsoft.azure.sdk.iot.device.Message;
 import com.microsoft.azure.sdk.iot.device.auth.IotHubSasToken;
-import com.microsoft.azure.sdk.iot.device.transport.mqtt.Mqtt;
-import com.microsoft.azure.sdk.iot.device.transport.mqtt.MqttConnection;
-import com.microsoft.azure.sdk.iot.device.transport.mqtt.MqttDeviceTwin;
-import com.microsoft.azure.sdk.iot.device.transport.mqtt.MqttMessaging;
+import com.microsoft.azure.sdk.iot.device.transport.mqtt.*;
 import mockit.*;
 import org.apache.commons.lang3.tuple.MutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -18,6 +15,8 @@ import org.junit.Test;
 
 import java.io.IOException;
 import java.security.InvalidParameterException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -25,9 +24,10 @@ import static org.junit.Assert.*;
 
 /**
  * Unit test for Mqtt class.
- * 86% methods, 82% lines covered
+ * 86% methods, 86% lines covered
  */
-public class MqttTest {
+public class MqttTest
+{
     private static final String CLIENT_ID = "test.iothub";
     private static final String MOCK_PARSE_TOPIC = "devices/deviceID/messages/devicebound/%24.mid=69ea4caf-d83e-454b-81f2-caafda4c81c8&%24.exp=0&%24.to=%2Fdevices%2FdeviceID%2Fmessages%2FdeviceBound&%24.cid=169c34b3-99b0-49f9-b0f6-8fa9d2c99345&iothub-ack=full&property1=value1";
     private static final byte[] EXPECTED_PAYLOAD = {0x61, 0x62, 0x63};
@@ -60,6 +60,9 @@ public class MqttTest {
 
     @Mocked
     private MqttConnection mockedMqttConnection;
+
+    @Mocked
+    private MqttConnectionStateListener mockedMqttConnectionStateListener;
 
     @Before
     public void setUp()
@@ -1027,15 +1030,10 @@ public class MqttTest {
         }
     }
 
-   /*
-    **Tests_SRS_Mqtt_99_050: [**The function shall check if SAS token has already expired.**]**
-    */
-    /*
-    **Tests_SRS_Mqtt_25_026: [**The function shall notify all its concrete classes by calling abstract method onReconnect at the entry of the function**]**
-     */
-    /*
-    **Tests_SRS_Mqtt_25_029: [**The function shall notify all its concrete classes by calling abstract method onReconnectComplete at the exit of the function**]**
-     */
+    //Tests_SRS_Mqtt_99_050: [**The function shall check if SAS token has already expired.]
+    //Tests_SRS_Mqtt_25_026: [The function shall notify all its concrete classes by calling abstract method onReconnect at the entry of the function]
+    //Tests_SRS_Mqtt_25_029: [The function shall notify all its concrete classes by calling abstract method onReconnectComplete at the exit of the function]
+    //Tests_SRS_Mqtt_34_045: [This function shall notify all its saved listeners that connection was lost.]
     @Test
     public void connectionLostAttemptsToReconnectWithSASTokenStillValid() throws IOException, MqttException
     {
@@ -1068,17 +1066,28 @@ public class MqttTest {
             }
         };
 
+        Collection<MqttConnectionStateListener> listeners = new ArrayList<>();
+        listeners.add(mockedMqttConnectionStateListener);
+
         //act
         try
         {
             mockMqtt = instantiateMqtt(true);
             Deencapsulation.invoke(mockMqtt, "setDeviceClientConfig", mockDeviceClientConfig);
+            Deencapsulation.invoke(mockMqtt, "setListeners", new Class[] {Collection.class}, listeners);
             mockMqtt.connectionLost(t);
         }
         catch (Exception e)
         {
             System.out.print("Completed throwing exception - " + e.getCause() + e.getMessage());
         }
+
+        new Verifications()
+        {
+            {
+                mockedMqttConnectionStateListener.connectionLost();
+            }
+        };
     }
 
     /*
@@ -1221,7 +1230,6 @@ public class MqttTest {
 
                 mockMqttAsyncClient.connect(mockMqttConnectionOptions);
                 result = mockMqttException;
-
 
                 mockMqttAsyncClient.isConnected();
                 result = false;
@@ -1416,5 +1424,5 @@ public class MqttTest {
         Mqtt mockMqtt = instantiateMqtt(true);
 
         Deencapsulation.invoke(mockMqtt,"setDeviceClientConfig", new Class[] {DeviceClientConfig.class},(DeviceClientConfig)null);
-    } 
+    }
 }

@@ -14,6 +14,8 @@ import com.microsoft.azure.sdk.iot.device.transport.TransportUtils;
 import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.Collection;
 
 public class MqttIotHubConnection
 {
@@ -38,6 +40,8 @@ public class MqttIotHubConnection
     private static final String SSL_PORT_SUFFIX = ":8883";
 
     private static final String TWIN_API_VERSION = "api-version=2016-11-14";
+
+    private final Collection<MqttConnectionStateListener> listeners = new ArrayList<>();
 
     //Messaging clients
     private MqttMessaging deviceMessaging;
@@ -151,15 +155,24 @@ public class MqttIotHubConnection
                 }
 
                 this.deviceMessaging = new MqttMessaging(mqttConnection, this.config.getDeviceId());
-                mqttConnection.setMqttCallback(this.deviceMessaging);
                 this.deviceMethod = new MqttDeviceMethod(mqttConnection);
                 this.deviceTwin = new MqttDeviceTwin(mqttConnection);
-                
+
+                this.mqttConnection.setMqttCallback(this.deviceMessaging);
+
                 // Codes_SRS_MQTTIOTHUBCONNECTION_99_017 : [The function shall set DeviceClientConfig object needed for SAS token renewal.]
                 this.deviceMessaging.setDeviceClientConfig(this.config);
 
+                //Codes_SRS_MQTTIOTHUBCONNECTION_34_030: [This function shall sync this object's saved listener collection with all of its messaging clients.]
+                syncListenersWithMessagingClients();
+
                 this.deviceMessaging.start();
                 this.state = State.OPEN;
+
+                for (MqttConnectionStateListener listener : this.listeners)
+                {
+                    listener.connectionEstablished();
+                }
             }
             catch (Exception e)
             {
@@ -180,7 +193,6 @@ public class MqttIotHubConnection
                 }
                 throw new IOException(e);
             }
-
         }
     }
 
@@ -317,5 +329,39 @@ public class MqttIotHubConnection
             message = deviceMessaging.receive();
         }
         return message;
+    }
+
+    /**
+     * Subscribe a listener to the list of listeners.
+     * @param listener the listener to be subscribed.
+     */
+    void addListener(MqttConnectionStateListener listener)
+    {
+        if (listener != null)
+        {
+            //Codes_SRS_MQTTIOTHUBCONNECTION_34_028: [If the provided listener is not null, this function shall add it to this object's saved listener collection.]
+            listeners.add(listener);
+        }
+
+        //Codes_SRS_MQTTIOTHUBCONNECTION_34_029: [This function shall sync this object's saved listener collection with each of its messaging clients that are not null.]
+        syncListenersWithMessagingClients();
+    }
+
+    private void syncListenersWithMessagingClients()
+    {
+        if (this.deviceMessaging != null)
+        {
+            this.deviceMessaging.setListeners(this.listeners);
+        }
+
+        if (this.deviceMethod != null)
+        {
+            this.deviceMethod.setListeners(this.listeners);
+        }
+
+        if (this.deviceTwin != null)
+        {
+            this.deviceTwin.setListeners(this.listeners);
+        }
     }
 }

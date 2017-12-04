@@ -17,7 +17,7 @@ public final class MqttIotHubConnection
     public void close();
     public IotHubStatusCode sendEvent(Message msg) throws IllegalStateException;
     public Message receiveMessage() throws IllegalStateException;
-
+    void addListener(MqttConnectionStateListener listener);
 }
 ```
 
@@ -54,6 +54,8 @@ public void open() throws IOException, IllegalArgumentException;
 **SRS_MQTTIOTHUBCONNECTION_99_017: [**The function shall set DeviceClientConfig object needed for SAS token renewal.**]**
 
 **SRS_MQTTIOTHUBCONNECTION_34_027: [**If this function is called while using websockets and x509 authentication, an UnsupportedOperation shall be thrown.**]**
+
+**SRS_MQTTIOTHUBCONNECTION_34_030: [**This function shall sync this object's saved listener collection with all of its messaging clients.**]**
 
 
 ### close
@@ -100,3 +102,14 @@ public Message receiveMessage() throws IllegalStateException, IOException;
 **SRS_MQTTIOTHUBCONNECTION_34_016: [**If any of the messaging clients throw an exception, The associated message will be removed from the queue and the exception will be propagated up to the receive task.**]**
 
 **SRS_MQTTIOTHUBCONNECTION_34_017: [**If all of the messaging clients fail to receive, the function shall throw an UnsupportedOperationException.**]**
+
+
+### addListener
+```java
+void addListener(MqttConnectionStateListener listener);
+```
+
+**SRS_MQTTIOTHUBCONNECTION_34_028: [**If the provided listener is not null, this function shall add it to this object's saved listener collection.**]**
+
+**SRS_MQTTIOTHUBCONNECTION_34_029: [**This function shall sync this object's saved listener collection with each of its messaging clients that are not null.**]**
+
