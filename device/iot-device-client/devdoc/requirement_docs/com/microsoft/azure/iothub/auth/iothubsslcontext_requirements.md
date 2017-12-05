@@ -109,3 +109,23 @@ public SSLContext getSSLContext();
 ```
 
 **SRS_IOTHUBSSLCONTEXT_25_017: [*This method shall return the value of sslContext.**]**
+
+
+### parsePrivateKey
+```java
+public static PrivateKey parsePrivateKey(String privateKeyString) throws CertificateException;
+```
+
+**SRS_IOTHUBSSLCONTEXT_34_031: [**This function shall return a Private Key instance created by the provided PEM formatted privateKeyString.**]**  
+
+**SRS_IOTHUBSSLCONTEXT_34_032: [**If any exception is encountered while attempting to create the private key instance, this function shall throw a CertificateException.**]**  
+
+
+### parsePublicKeyCertificate()
+```java
+public static X509Certificate parsePublicKeyCertificate(String publicKeyCertificateString) throws CertificateException;
+```
+
+**SRS_IOTHUBSSLCONTEXT_34_033: [**This function shall return an X509Certificate instance created by the provided PEM formatted publicKeyCertificateString.**]**  
+
+**SRS_IOTHUBSSLCONTEXT_34_034: [**If any exception is encountered while attempting to create the public key certificate instance, this function shall throw a CertificateException.**]**  
