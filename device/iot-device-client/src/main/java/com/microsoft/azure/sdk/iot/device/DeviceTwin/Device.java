@@ -62,9 +62,7 @@ abstract public class Device implements PropertyCallBack<String, Object>
 
     public void clean()
     {
-        /*
-        **Codes_SRS_DEVICE_25_009: [**The method shall remove all the reported and desired properties set by the user so far and mark existing collections as null to be garbage collected.**]**
-         */
+        //Codes_SRS_DEVICE_34_009: [The method shall remove all the reported and desired properties set by the user so far and set existing collections to new, empty collections.]
         if (reportedProp != null)
         {
             for (Iterator repProperty = reportedProp.iterator(); repProperty.hasNext();)
@@ -73,7 +71,8 @@ abstract public class Device implements PropertyCallBack<String, Object>
                 repProperty.remove();
             }
         }
-        reportedProp = null;
+
+        reportedProp = new HashSet<>();
 
         if (desiredProp != null)
         {
@@ -83,7 +82,7 @@ abstract public class Device implements PropertyCallBack<String, Object>
                 desiredProperty.remove();
             }
         }
-        desiredProp = null;
-    }
 
+        desiredProp = new HashMap<>();
+    }
 }
